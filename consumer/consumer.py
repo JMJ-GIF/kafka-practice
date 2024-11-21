@@ -1,38 +1,49 @@
 from kafka import KafkaConsumer
-import json
 import os
-import threading
+import json
+import logging
 
-# Kafka 설정
-def create_consumer(group_id):
-    return KafkaConsumer(
-        'multi-test-topic',
-        bootstrap_servers=os.getenv('KAFKA_SERVER', 'kafka:9092'),  # Kafka 브로커 주소
-        group_id=group_id,  # Consumer 그룹 설정
-        auto_offset_reset='earliest',  # 가장 처음부터 데이터 읽기 시작
-        enable_auto_commit=True,
-        value_deserializer=lambda x: json.loads(x.decode('utf-8'))
-    )
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("KafkaConsumer")
 
-# Consumer 그룹 A와 B 생성
-def consume_messages(consumer_id, group_id):
-    consumer = create_consumer(group_id)
-    print(f"Consumer {consumer_id} in Group {group_id} listening for messages...")
-    for message in consumer:
-        print(f"Consumer {consumer_id} in Group {group_id} received: {message.value}")
+def create_consumer(topic: str, group_id: str) -> KafkaConsumer:
+    """
+    Kafka Consumer 생성 함수.
+    :param topic: Kafka 토픽 이름
+    :param group_id: Consumer Group ID
+    :return: KafkaConsumer 객체
+    """
+    try:
+        consumer = KafkaConsumer(
+            topic,
+            bootstrap_servers=os.getenv('KAFKA_SERVER', 'kafka:9092'),
+            group_id=group_id,
+            auto_offset_reset='earliest',  # 가장 처음부터 데이터 읽기
+            enable_auto_commit=True,       # 메시지 자동 커밋 활성화
+            value_deserializer=lambda x: json.loads(x.decode('utf-8'))
+        )
+        logger.info(f"Kafka Consumer created for topic: {topic}, group_id: {group_id}")
+        return consumer
+    except Exception as e:
+        logger.error(f"Failed to create Kafka Consumer: {e}")
+        raise
 
-# 각 Consumer를 별도의 스레드에서 실행
-threads = []
-for i in range(2):
-    t = threading.Thread(target=consume_messages, args=(f'1-{i}', 'group_a'))
-    threads.append(t)
-    t.start()
+if __name__ == '__main__':
+    # Kafka 설정
+    TOPIC = 'multi-test-topic'
+    GROUP_ID = 'group_a'
 
-for i in range(2):
-    t = threading.Thread(target=consume_messages, args=(f'2-{i}', 'group_b'))
-    threads.append(t)
-    t.start()
-
-# 모든 스레드가 종료될 때까지 대기
-for t in threads:
-    t.join()
+    logger.info("Starting Kafka Consumer...")
+    try:
+        # Kafka Consumer 생성
+        consumer = create_consumer(topic=TOPIC, group_id=GROUP_ID)
+        logger.info(f"Listening for messages on topic '{TOPIC}' in group '{GROUP_ID}'...")
+        
+        # 메시지 처리
+        for message in consumer:
+            logger.info(f"Received message: {message.value}")
+    except KeyboardInterrupt:
+        logger.info("Kafka Consumer stopped manually.")
+    except Exception as e:
+        logger.error(f"Error in Kafka Consumer: {e}")
